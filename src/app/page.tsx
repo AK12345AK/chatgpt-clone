@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import ChatMessage from '@/components/ChatMessage';
 import LoadingDots from '@/components/LoadingDots';
 import SampleQuestions from '@/components/SampleQuestions';
@@ -25,53 +25,98 @@ export default function Home() {
   const [currentModel, setCurrentModel] = useState<string>('');
   const [lastUsage, setLastUsage] = useState<Message['usage']>();
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  const [currentPlayingIndex, setCurrentPlayingIndex] = useState<number | null>(null);
+
+  useEffect(() => {
+    // Створюємо аудіо елемент
+    const audio = new Audio();
+    audioRef.current = audio;
+
+    // Додаємо обробники подій
+    audio.addEventListener('ended', () => {
+      setIsSpeaking(false);
+      setCurrentPlayingIndex(null);
+    });
+
+    audio.addEventListener('error', (e) => {
+      console.error('Audio playback error:', e);
+      setIsSpeaking(false);
+      setCurrentPlayingIndex(null);
+    });
+
+    return () => {
+      audio.pause();
+      audio.src = '';
+    };
+  }, []);
 
   const playMessage = async (text: string, messageIndex: number) => {
-    if (isSpeaking) {
-      audioRef.current?.pause();
-      setIsSpeaking(false);
-      return;
-    }
-
     try {
+      // Якщо вже граємо це повідомлення, зупиняємо
+      if (currentPlayingIndex === messageIndex && isSpeaking) {
+        audioRef.current?.pause();
+        setIsSpeaking(false);
+        setCurrentPlayingIndex(null);
+        return;
+      }
+
+      // Якщо граємо інше повідомлення, зупиняємо його
+      if (isSpeaking) {
+        audioRef.current?.pause();
+      }
+
       setIsSpeaking(true);
+      setCurrentPlayingIndex(messageIndex);
+
+      console.log('Generating speech for:', text);
       const response = await fetch('/api/speech', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ text }),
       });
 
-      if (!response.ok) throw new Error('Failed to generate speech');
+      if (!response.ok) {
+        const errorData = await response.text();
+        console.error('Speech generation error:', errorData);
+        throw new Error('Failed to generate speech');
+      }
 
-      const characterCount = response.headers.get('x-character-count');
       const audioBlob = await response.blob();
       const audioUrl = URL.createObjectURL(audioBlob);
-
-      // Оновлюємо повідомлення з інформацією про використання символів
-      setMessages(prev => prev.map((msg, idx) => {
-        if (idx === messageIndex) {
-          return {
-            ...msg,
-            usage: {
-              ...msg.usage,
-              speechCharacters: Number(characterCount)
-            }
-          };
-        }
-        return msg;
-      }));
-
+      
       if (audioRef.current) {
         audioRef.current.src = audioUrl;
-        audioRef.current.play();
-        audioRef.current.onended = () => {
-          setIsSpeaking(false);
-          URL.revokeObjectURL(audioUrl);
-        };
+        const playPromise = audioRef.current.play();
+        
+        if (playPromise !== undefined) {
+          playPromise.catch(error => {
+            console.error('Playback error:', error);
+            setIsSpeaking(false);
+            setCurrentPlayingIndex(null);
+          });
+        }
+
+        // Оновлюємо статистику використання
+        const characterCount = response.headers.get('x-character-count');
+        if (characterCount) {
+          setMessages(prev => prev.map((msg, idx) => {
+            if (idx === messageIndex) {
+              return {
+                ...msg,
+                usage: {
+                  ...msg.usage,
+                  speechCharacters: Number(characterCount)
+                }
+              };
+            }
+            return msg;
+          }));
+        }
       }
     } catch (error) {
       console.error('Error playing message:', error);
       setIsSpeaking(false);
+      setCurrentPlayingIndex(null);
     }
   };
 
@@ -132,10 +177,13 @@ export default function Home() {
                   <button
                     onClick={() => playMessage(msg.content, index)}
                     className={`p-2 rounded-full ${
-                      isSpeaking ? 'bg-red-500' : 'bg-blue-500'
-                    } text-white`}
+                      isSpeaking && currentPlayingIndex === index
+                        ? 'bg-red-500'
+                        : 'bg-blue-500'
+                    } text-white hover:opacity-80 transition-opacity`}
+                    title={isSpeaking && currentPlayingIndex === index ? 'Зупинити' : 'Відтворити'}
                   >
-                    {isSpeaking ? '■' : '▶'}
+                    {isSpeaking && currentPlayingIndex === index ? '■' : '▶'}
                   </button>
                 )}
               </div>
@@ -177,7 +225,6 @@ export default function Home() {
           <SampleQuestions onSelect={setInput} />
         </div>
       </div>
-      <audio ref={audioRef} className="hidden" />
     </main>
   );
 } 

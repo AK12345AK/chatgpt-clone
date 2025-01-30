@@ -15,7 +15,7 @@ export async function POST(request: Request) {
       throw new Error('ElevenLabs API key is missing');
     }
 
-    const apiUrl = `https://api.elevenlabs.io/v1/text-to-speech/${VOICE_ID}`;
+    const apiUrl = `https://api.elevenlabs.io/v1/text-to-speech/${VOICE_ID}/stream`;
     console.log('Making request to:', apiUrl);
 
     const response = await fetch(apiUrl, {
@@ -27,10 +27,12 @@ export async function POST(request: Request) {
       },
       body: JSON.stringify({
         text,
-        model_id: 'eleven_monolingual_v1',
+        model_id: 'eleven_multilingual_v2',
         voice_settings: {
           stability: 0.5,
-          similarity_boost: 0.5,
+          similarity_boost: 0.75,
+          style: 0.5,
+          use_speaker_boost: true
         },
       }),
     });
@@ -55,7 +57,12 @@ export async function POST(request: Request) {
     return new NextResponse(audioBlob, {
       headers: {
         'Content-Type': 'audio/mpeg',
-        'x-character-count': usage || '0'
+        'Content-Length': audioBlob.size.toString(),
+        'x-character-count': usage || '0',
+        'Cache-Control': 'no-cache, no-store, must-revalidate',
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+        'Access-Control-Allow-Headers': 'Content-Type, Authorization'
       }
     });
   } catch (error) {
@@ -63,7 +70,14 @@ export async function POST(request: Request) {
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
     return NextResponse.json(
       { error: `Помилка при генерації мовлення: ${errorMessage}` },
-      { status: 500 }
+      { 
+        status: 500,
+        headers: {
+          'Access-Control-Allow-Origin': '*',
+          'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+          'Access-Control-Allow-Headers': 'Content-Type, Authorization'
+        }
+      }
     );
   }
 } 
