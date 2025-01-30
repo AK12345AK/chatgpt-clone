@@ -8,16 +8,20 @@ export async function POST(request: Request) {
     const { text } = await request.json();
     
     console.log('Generating speech for text:', text);
-    console.log('API Key length:', ELEVEN_LABS_API_KEY?.length || 0);
+    console.log('API Key present:', !!ELEVEN_LABS_API_KEY);
+    if (ELEVEN_LABS_API_KEY) {
+      console.log('API Key length:', ELEVEN_LABS_API_KEY.length);
+      console.log('API Key format check:', ELEVEN_LABS_API_KEY.substring(0, 5) + '...');
+    }
     console.log('Voice ID:', VOICE_ID);
 
     if (!ELEVEN_LABS_API_KEY) {
       throw new Error('ElevenLabs API key is missing');
     }
 
-    // Перевіряємо формат API ключа
-    if (!ELEVEN_LABS_API_KEY.startsWith('sk-')) {
-      throw new Error('Invalid ElevenLabs API key format');
+    // Базова валідація API ключа
+    if (ELEVEN_LABS_API_KEY.length < 32) {
+      throw new Error('ElevenLabs API key is too short');
     }
 
     const apiUrl = `https://api.elevenlabs.io/v1/text-to-speech/${VOICE_ID}`;
@@ -26,6 +30,7 @@ export async function POST(request: Request) {
     // Спочатку перевіримо API ключ
     const checkResponse = await fetch('https://api.elevenlabs.io/v1/user', {
       headers: {
+        'Accept': 'application/json',
         'xi-api-key': ELEVEN_LABS_API_KEY
       }
     });
@@ -33,7 +38,7 @@ export async function POST(request: Request) {
     if (!checkResponse.ok) {
       const checkError = await checkResponse.text();
       console.error('API key validation failed:', checkError);
-      throw new Error(`API key validation failed: ${checkResponse.status}`);
+      throw new Error(`Invalid API key: ${checkResponse.status} ${checkResponse.statusText}`);
     }
 
     const response = await fetch(apiUrl, {
@@ -64,7 +69,6 @@ export async function POST(request: Request) {
     }
 
     console.log('Speech generated successfully');
-    console.log('Response headers:', Object.fromEntries(response.headers.entries()));
     
     const audioBlob = await response.blob();
     const usage = response.headers.get('x-character-count');
@@ -87,7 +91,10 @@ export async function POST(request: Request) {
     console.error('ElevenLabs API error:', error);
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
     return NextResponse.json(
-      { error: `Помилка при генерації мовлення: ${errorMessage}` },
+      { 
+        error: `Помилка при генерації мовлення: ${errorMessage}`,
+        details: error instanceof Error ? error.stack : undefined
+      },
       { 
         status: 500,
         headers: {
