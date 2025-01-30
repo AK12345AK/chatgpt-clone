@@ -8,15 +8,33 @@ export async function POST(request: Request) {
     const { text } = await request.json();
     
     console.log('Generating speech for text:', text);
-    console.log('Using API key:', ELEVEN_LABS_API_KEY ? 'Present' : 'Missing');
+    console.log('API Key length:', ELEVEN_LABS_API_KEY?.length || 0);
     console.log('Voice ID:', VOICE_ID);
 
     if (!ELEVEN_LABS_API_KEY) {
       throw new Error('ElevenLabs API key is missing');
     }
 
-    const apiUrl = `https://api.elevenlabs.io/v1/text-to-speech/${VOICE_ID}/stream`;
+    // Перевіряємо формат API ключа
+    if (!ELEVEN_LABS_API_KEY.startsWith('sk-')) {
+      throw new Error('Invalid ElevenLabs API key format');
+    }
+
+    const apiUrl = `https://api.elevenlabs.io/v1/text-to-speech/${VOICE_ID}`;
     console.log('Making request to:', apiUrl);
+
+    // Спочатку перевіримо API ключ
+    const checkResponse = await fetch('https://api.elevenlabs.io/v1/user', {
+      headers: {
+        'xi-api-key': ELEVEN_LABS_API_KEY
+      }
+    });
+
+    if (!checkResponse.ok) {
+      const checkError = await checkResponse.text();
+      console.error('API key validation failed:', checkError);
+      throw new Error(`API key validation failed: ${checkResponse.status}`);
+    }
 
     const response = await fetch(apiUrl, {
       method: 'POST',
